@@ -21,6 +21,9 @@
     "eslint-plugin-security": "^1.4.0",
     "eslint-watch": "^3.1.4"
   },
+  "repository": {
+    "url": "https://github.com/Paulo-Ariel-Pareja/simple-rabbitmq-connection"
+  },
   "keywords": [
     "rabbitmq",
     "queue",
