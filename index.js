@@ -1,3 +1,4 @@
+/* eslint-disable no-param-reassign */
 /* eslint-disable dot-notation */
 /* eslint-disable no-await-in-loop */
 /* eslint-disable no-plusplus */
@@ -17,7 +18,41 @@ const manualConfigDefaut = {
       retry_timeout: process.env.RABBIT_RETRY_TIMEOUT_MANUAL || 5000
     },
   ],
-}
+};
+
+const getConnection = (data) => {
+  return new Promise((resolve, reject) => {
+    if (!data.connObject) {
+      const message = 'Connection object is required';
+      console.error(message);
+      reject(Error(message));
+    }
+    data.eventConnection = amqp.connect([`${data.connObject.protocol}://${data.connObject.user}:${data.connObject.pass}@${data.connObject.server}:${data.connObject.port}${data.connObject.vhost}`], { json: true });
+    data.eventConnection.on('connect', () => {
+      console.info('Rabbitmq is connected');
+      resolve(data.eventConnection);
+    });
+    data.eventConnection.on('disconnect', (params) => {
+      data.eventConnection = null;
+      console.error(params.err.message);
+      setTimeout(() => {
+        data.init();
+      }, 5000);
+    });
+    data.eventConnection.on('error', (error) => {
+      data.eventConnection = null;
+      console.error(error.message);
+      setTimeout(() => {
+        data.init();
+      }, 5000);
+    });
+    if (data.eventConnection) {
+      console.info('Connection will be established');
+      return Promise.resolve(data.eventConnection);
+    }
+    console.error('Connection not established');
+  });
+};
 
 const getTimeout = (channel) => {
   const timeout = channel.retry_timeout ? channel.retry_timeout : 5000;
@@ -32,7 +67,11 @@ class SimpleRabbitmqConnection {
     this.configs = configs;
   }
   async init() {
-    const connection = await this.getConnection();
+    const connection = await getConnection(this);
+    if (this.eventConnection) {
+      console.info('Connection will be established');
+    }
+
     if (!this.configs['manual']) {
       this.configs.manual = manualConfigDefaut;
     }
@@ -54,39 +93,7 @@ class SimpleRabbitmqConnection {
     }
     return connection;
   }
-  getConnection() {
-    return new Promise((resolve, reject) => {
-      if (!this.connObject) {
-        const message = 'Connection object is required';
-        console.error(message);
-        reject(Error(message));
-      }
-      this.eventConnection = amqp.connect([`${this.connObject.protocol}://${this.connObject.user}:${this.connObject.pass}@${this.connObject.server}:${this.connObject.port}${this.connObject.vhost}`], { json: true });
-      this.eventConnection.on('connect', () => {
-        this.isConnected = true;
-        console.info('Connection will be established');
-        resolve(this.eventConnection);
-      });
-      this.eventConnection.on('disconnect', (params) => {
-        this.isConnected = false;
-        this.eventConnection = null;
-        console.error(params.err.message);
-        this.init();
-      });
-      this.eventConnection.on('error', (error) => {
-        this.isConnected = false;
-        this.eventConnection = null;
-        console.error(error.message);
-        this.init();
-      });
-      if (this.eventConnection) {
-        console.info('Connection will be established');
-        return Promise.resolve(this.eventConnection);
-      }
-      console.error('Connection not established');
-      return this.init();
-    });
-  }
+
   createExchanges(exchangeList) {
     Object.keys(exchangeList).forEach((key) => {
       const channelWrapper = this.channels[exchangeList[key].channelId];
@@ -128,7 +135,7 @@ class SimpleRabbitmqConnection {
       return Promise.resolve(this.channels[channelName]);
     }
     return new Promise((resolve, reject) => {
-      this.getConnection().then(() => {
+      getConnection(this).then(() => {
         resolve(this.channels[channelName]);
       }).catch((error) => {
         console.error(`error getting channel ${channelName}`);
